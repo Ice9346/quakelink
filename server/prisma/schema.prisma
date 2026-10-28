@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PUBLIC
+  ADMIN
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String?  @unique
+  passwordHash  String?
+  name          String?
+  province      String?
+  role          UserRole @default(PUBLIC)
+  lastLoginAt   DateTime? @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  oauthAccounts OAuthAccount[]
+}
+
+model OAuthAccount {
+  id         String   @id @default(cuid())
+  provider   String   // google | facebook | github
+  providerId String
+  email      String?
+  name       String?
+  avatarUrl  String?
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  alertId     String   @unique
+  severity    String
+  magnitude   Float
+  location    String
+  description String
+  distanceKm  Float?
+  lat         Float
+  lng         Float
+  nodeId      String?
+
+  timestamp   DateTime @default(now()) @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+}

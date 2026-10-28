@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>$(DEVELOPMENT_LANGUAGE)</string>
+
+  <key>CFBundleDisplayName</key>
+  <string>Quakelink App</string>
+
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+
+  <key>CFBundleName</key>
+  <string>quakelink_app</string>
+
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+
+  <key>CFBundleShortVersionString</key>
+  <string>$(FLUTTER_BUILD_NAME)</string>
+
+  <key>CFBundleSignature</key>
+  <string>????</string>
+
+  <key>CFBundleVersion</key>
+  <string>$(FLUTTER_BUILD_NUMBER)</string>
+
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+
+  <key>UILaunchStoryboardName</key>
+  <string>LaunchScreen</string>
+
+  <key>UIMainStoryboardFile</key>
+  <string>Main</string>
+
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+
+  <key>UISupportedInterfaceOrientations~ipad</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+
+  <key>CADisableMinimumFrameDurationOnPhone</key>
+  <true/>
+
+  <key>UIApplicationSupportsIndirectInputEvents</key>
+  <true/>
+
+  <key>io.flutter.embedded_views_preview</key>
+  <true/>
+
+  <!-- Permissions -->
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>This app needs location access to show your position on the map.</string>
+
+  <key>NSMicrophoneUsageDescription</key>
+  <string>QuakeLink needs microphone access for voice chat.</string>
+
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>QuakeLink uses speech recognition to convert your voice to text.</string>
+
+  <!-- URL Schemes -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <!-- App scheme (GitHub callbackScheme: quakelink) -->
+        <string>quakelink</string>
+
+        <!-- Facebook scheme -->
+        <string>fb4341462066178146</string>
+
+        <!-- ✅ Google scheme: ใส่ค่า REVERSED_CLIENT_ID จาก GoogleService-Info.plist -->
+        <string>com.googleusercontent.apps.829140835917-81qe11gf4hriqnafu1or16fuocuda7et</string>
+      </array>
+    </dict>
+  </array>
+
+  <!-- Facebook -->
+  <key>FacebookAppID</key>
+  <string>4341462066178146</string>
+  <key>FacebookDisplayName</key>
+  <string>QuakeLink</string>
+  <key>FacebookClientToken</key>
+  <string>b43f011c01a861a140b081aefe417b2b</string>
+
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>fbapi</string>
+    <string>fb-messenger-share-api</string>
+    <string>fbauth2</string>
+    <string>fbshareextension</string>
+  </array>
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>QuakeLink needs your location to show the nearest sensor and local alerts.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>QuakeLink needs your location to provide nearby safety alerts.</string>
+
+</dict>
+</plist>
