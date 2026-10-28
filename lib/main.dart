@@ -28,7 +28,9 @@ class QuakeLinkApp extends StatelessWidget {
         brightness: Brightness.light,
       ),
       onGenerateRoute: AppRouter.onGenerateRoute,
-      initialRoute: AppRouter.authGateRoute,
+      // เปิดหน้าแอปโดยตรงสำหรับหน้าเว็บ/เดโม
+      // ระบบ login และ route /login ยังอยู่และเรียกใช้ได้ตามปกติ
+      initialRoute: AppRouter.mainRoute,
     );
   }
 }
