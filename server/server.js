@@ -167,39 +167,141 @@ const TB_DEVICE_NAMES = (process.env.TB_DEVICE_NAMES || TB_DEVICE_NAME || "Earth
 
 let tbToken = null;
 let tbTokenExp = 0;
+let tbTokenIssuedAt = 0;
+let tbLoginPromise = null;
+let tbTokenExpiryLogged = false;
 
-async function tbLogin() {
+// ThingsBoard token จะถูกขอใหม่ล่วงหน้าเป็นระยะ ๆ เพื่อไม่ให้หมดอายุระหว่างเรียกข้อมูล
+// ปรับได้ด้วย TB_TOKEN_REFRESH_MS แต่ค่าเริ่มต้นคือ 2 ชั่วโมง
+const TB_TOKEN_REFRESH_MS = Math.max(
+  parseInt(process.env.TB_TOKEN_REFRESH_MS || String(2 * 60 * 60 * 1000), 10) ||
+    2 * 60 * 60 * 1000,
+  60_000,
+);
+const TB_TOKEN_REFRESH_DEMO =
+  String(process.env.TB_TOKEN_REFRESH_DEMO || "false").toLowerCase() === "true";
+const TB_TOKEN_REFRESH_DEMO_DELAY_MS = Math.max(
+  parseInt(process.env.TB_TOKEN_REFRESH_DEMO_DELAY_MS || "10000", 10) || 10000,
+  1000,
+);
+
+function maskTbToken(token) {
+  const value = String(token || "");
+  if (value.length <= 24) return "[masked]";
+  return `${value.slice(0, 12)}...${value.slice(-8)}`;
+}
+
+async function tbLogin({ force = false } = {}) {
   if (!TB_BASE_URL || !TB_USERNAME || !TB_PASSWORD) {
     throw new Error("ThingsBoard env missing (TB_BASE_URL/TB_USERNAME/TB_PASSWORD)");
   }
   const now = Date.now();
-  if (tbToken && now < tbTokenExp - 30_000) return tbToken;
+  const refreshDue = now - tbTokenIssuedAt >= TB_TOKEN_REFRESH_MS;
+  const expiresSoon = tbTokenExp > 0 && now >= tbTokenExp - 60_000;
+  if (!force && tbToken && !refreshDue && !expiresSoon) return tbToken;
 
-  const res = await axios.post(`${TB_BASE_URL}/api/auth/login`, {
-    username: TB_USERNAME,
-    password: TB_PASSWORD,
+  // ป้องกันหลาย request login พร้อมกันเมื่อ token หมดอายุ
+  if (tbLoginPromise) return tbLoginPromise;
+
+  tbLoginPromise = (async () => {
+    const res = await axios.post(`${TB_BASE_URL}/api/auth/login`, {
+      username: TB_USERNAME,
+      password: TB_PASSWORD,
+    });
+
+    tbToken = res.data?.token || null;
+    tbTokenIssuedAt = Date.now();
+
+    // ใช้ exp จริงจาก JWT ถ้ามี; ถ้าไม่มีให้ถือว่าถึงรอบ refresh ใน 2 ชั่วโมง
+    const payload = tbToken ? jwt.decode(tbToken) : null;
+    tbTokenExp = Number.isFinite(payload?.exp)
+      ? payload.exp * 1000
+      : tbTokenIssuedAt + TB_TOKEN_REFRESH_MS;
+
+    if (!tbToken) throw new Error("ThingsBoard login failed: token missing");
+    // แสดงอายุ token แค่ครั้งแรก เพื่อใช้ตรวจสอบโดยไม่ทำให้ console มี log ซ้ำ
+    if (!tbTokenExpiryLogged) {
+      const issuedAt = new Date(tbTokenIssuedAt).toISOString();
+      const expiresAt = new Date(tbTokenExp).toISOString();
+      const lifetimeMinutes = Math.max(
+        0,
+        Math.round((tbTokenExp - tbTokenIssuedAt) / 60000),
+      );
+      console.log(`🔐 ThingsBoard token issued: ${issuedAt}`);
+      console.log(`⏳ ThingsBoard token expires: ${expiresAt} (อายุประมาณ ${lifetimeMinutes} นาที)`);
+      console.log(`🔄 Auto-refresh check: ทุก ${Math.round(TB_TOKEN_REFRESH_MS / 60000)} นาที`);
+      tbTokenExpiryLogged = true;
+    }
+    return tbToken;
+  })().finally(() => {
+    tbLoginPromise = null;
   });
 
-  tbToken = res.data?.token || null;
-  tbTokenExp = now + 10 * 60 * 1000; // 10 นาที
-  if (!tbToken) throw new Error("ThingsBoard login failed: token missing");
-  return tbToken;
+  return tbLoginPromise;
+}
+
+async function tbRequest(request) {
+  let token = await tbLogin();
+  try {
+    return await request(token);
+  } catch (err) {
+    // token อาจถูกยกเลิกจากฝั่ง ThingsBoard ก่อนถึงรอบ refresh
+    if (err?.response?.status !== 401) throw err;
+
+    tbToken = null;
+    tbTokenExp = 0;
+    tbTokenIssuedAt = 0;
+    token = await tbLogin({ force: true });
+    return request(token);
+  }
+}
+
+async function runTbTokenRefreshDemo() {
+  console.log(
+    `🧪 TB token refresh demo scheduled in ${TB_TOKEN_REFRESH_DEMO_DELAY_MS / 1000} seconds`,
+  );
+
+  setTimeout(async () => {
+    try {
+      const oldToken = await tbLogin();
+      const oldExpiry = tbTokenExp;
+
+      console.log("🧪 TB token refresh demo: BEFORE");
+      console.log(`   old token: ${maskTbToken(oldToken)}`);
+      console.log(`   old expiry: ${new Date(oldExpiry).toISOString()}`);
+
+      const newToken = await tbLogin({ force: true });
+      const newExpiry = tbTokenExp;
+
+      console.log("🧪 TB token refresh demo: AFTER");
+      console.log(`   new token: ${maskTbToken(newToken)}`);
+      console.log(`   new expiry: ${new Date(newExpiry).toISOString()}`);
+      console.log(`   token changed: ${oldToken !== newToken ? "YES ✅" : "NO ⚠️"}`);
+    } catch (err) {
+      console.error(
+        "❌ TB token refresh demo FAILED:",
+        err?.response?.data || err?.message || err,
+      );
+    }
+  }, TB_TOKEN_REFRESH_DEMO_DELAY_MS);
 }
 
 async function tbGetDeviceIdByName(deviceName) {
-  const token = await tbLogin();
-  const res = await axios.get(
-    `${TB_BASE_URL}/api/tenant/devices?deviceName=${encodeURIComponent(deviceName)}`,
-    { headers: { "X-Authorization": `Bearer ${token}` } }
+  const res = await tbRequest((token) =>
+    axios.get(
+      `${TB_BASE_URL}/api/tenant/devices?deviceName=${encodeURIComponent(deviceName)}`,
+      { headers: { "X-Authorization": `Bearer ${token}` } },
+    ),
   );
   return res.data?.id?.id || null; // deviceId
 }
 
 async function tbGetLatestTelemetry(deviceId, keys) {
-  const token = await tbLogin();
-  const res = await axios.get(
-    `${TB_BASE_URL}/api/plugins/telemetry/DEVICE/${deviceId}/values/timeseries?keys=${encodeURIComponent(keys.join(","))}`,
-    { headers: { "X-Authorization": `Bearer ${token}` } }
+  const res = await tbRequest((token) =>
+    axios.get(
+      `${TB_BASE_URL}/api/plugins/telemetry/DEVICE/${deviceId}/values/timeseries?keys=${encodeURIComponent(keys.join(","))}`,
+      { headers: { "X-Authorization": `Bearer ${token}` } },
+    ),
   );
   return res.data; // { key: [{ts,value}], ... }
 }
@@ -1425,6 +1527,29 @@ if (TB_LATESTALL_WS_ENABLE) {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 HTTP: http://localhost:${PORT}`);
   console.log(`🔌 WS : ws://localhost:${PORT}`);
+
+  // login ครั้งแรกตอนเริ่ม server เพื่อเช็ก credentials/การเชื่อมต่อ
+  // ถ้า ThingsBoard เข้าไม่ได้ จะ log สาเหตุ แต่ไม่ทำให้ API หลักหยุดทำงาน
+  if (TB_BASE_URL && TB_USERNAME && TB_PASSWORD) {
+    tbLogin()
+      .then(() => {
+        console.log(`🕒 ThingsBoard expiry check: ${new Date(tbTokenExp).toString()}`);
+      })
+      .catch((err) => {
+        console.error(
+          "❌ ThingsBoard startup login FAILED:",
+          err?.response?.data || err?.message || err,
+        );
+      });
+
+    if (TB_TOKEN_REFRESH_DEMO) {
+      runTbTokenRefreshDemo();
+    }
+  } else {
+    console.log(
+      "⚠️ ThingsBoard startup login skipped: TB_BASE_URL/TB_USERNAME/TB_PASSWORD is incomplete",
+    );
+  }
 });
 
 process.on("SIGINT", async () => {
