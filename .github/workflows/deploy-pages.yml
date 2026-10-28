@@ -39,10 +39,16 @@ jobs:
       - name: Build Flutter web
         env:
           API_BASE_URL: ${{ vars.QUAKELINK_API_BASE_URL || 'http://127.0.0.1:8080' }}
+          GOOGLE_MAPS_API_KEY: ${{ vars.GOOGLE_MAPS_API_KEY }}
         run: |
           flutter build web --release \
             --base-href "/quakelink/" \
             --dart-define=QUAKELINK_API_BASE_URL="$API_BASE_URL"
+          if [ -z "$GOOGLE_MAPS_API_KEY" ]; then
+            echo "GOOGLE_MAPS_API_KEY is not configured; Google Maps may not load."
+          else
+            printf "window.__GOOGLE_MAPS_API_KEY__ = '%s';\n" "$GOOGLE_MAPS_API_KEY" > build/web/google_maps_config.js
+          fi
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

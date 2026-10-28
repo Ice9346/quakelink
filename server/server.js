@@ -6,6 +6,8 @@ import XLSX from "xlsx";
 import fs from "fs";
 import path from "path";
 import http from "http";
+import readline from "readline";
+import tty from "tty";
 import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
@@ -157,7 +159,28 @@ function extractTextFromResponse(resp) {
 const TB_BASE_URL = process.env.TB_BASE_URL || "";
 const TB_USERNAME = process.env.TB_USERNAME || "";
 const TB_PASSWORD = process.env.TB_PASSWORD || "";
+const TB_DEVICE_ACCESS_TOKEN = process.env.TB_DEVICE_ACCESS_TOKEN || "";
 const TB_DEVICE_NAME = process.env.TB_DEVICE_NAME || "EarthquakeSensor001";
+
+const TB_SIMULATOR_ENABLE =
+  String(process.env.TB_SIMULATOR_ENABLE || "false").toLowerCase() === "true";
+const TB_SIMULATOR_SPACEBAR_ENABLE =
+  String(process.env.TB_SIMULATOR_SPACEBAR_ENABLE || "false").toLowerCase() === "true";
+const TB_SIMULATOR_MS = Math.max(
+  parseInt(process.env.TB_SIMULATOR_MS || String(5 * 60 * 1000), 10) ||
+    5 * 60 * 1000,
+  10_000,
+);
+
+const TB_SIMULATOR_LOCATIONS = [
+  ["Bangkok", 13.7563, 100.5018],
+  ["Chiang Mai", 18.7883, 98.9853],
+  ["Phrae", 18.1446, 100.1403],
+  ["Khon Kaen", 16.4322, 102.8236],
+  ["Nakhon Ratchasima", 14.9799, 102.0978],
+  ["Phuket", 7.8804, 98.3923],
+  ["Hat Yai", 7.0084, 100.4747],
+];
 
 // ✅ NEW: device list (ถ้าไม่ใส่ TB_DEVICE_NAMES จะ fallback ไป TB_DEVICE_NAME)
 const TB_DEVICE_NAMES = (process.env.TB_DEVICE_NAMES || TB_DEVICE_NAME || "EarthquakeSensor001")
@@ -223,12 +246,15 @@ async function tbLogin({ force = false } = {}) {
     if (!tbTokenExpiryLogged) {
       const issuedAt = new Date(tbTokenIssuedAt).toISOString();
       const expiresAt = new Date(tbTokenExp).toISOString();
+      const issuedAtLocal = new Date(tbTokenIssuedAt).toString();
+      const expiresAtLocal = new Date(tbTokenExp).toString();
       const lifetimeMinutes = Math.max(
         0,
         Math.round((tbTokenExp - tbTokenIssuedAt) / 60000),
       );
       console.log(`🔐 ThingsBoard token issued: ${issuedAt}`);
       console.log(`⏳ ThingsBoard token expires: ${expiresAt} (อายุประมาณ ${lifetimeMinutes} นาที)`);
+      console.log(`   เวลาไทย: ออก ${issuedAtLocal} | หมดอายุ ${expiresAtLocal}`);
       console.log(`🔄 Auto-refresh check: ทุก ${Math.round(TB_TOKEN_REFRESH_MS / 60000)} นาที`);
       tbTokenExpiryLogged = true;
     }
@@ -254,6 +280,73 @@ async function tbRequest(request) {
     token = await tbLogin({ force: true });
     return request(token);
   }
+}
+
+function buildTbSimulatorTelemetry() {
+  const [location, centerLat, centerLng] =
+    TB_SIMULATOR_LOCATIONS[Math.floor(Math.random() * TB_SIMULATOR_LOCATIONS.length)];
+
+  return {
+    pga: Number((0.05 + Math.random() * 0.45).toFixed(2)),
+    si: Number((0.5 + Math.random() * 5).toFixed(2)),
+    temp: Number((25 + Math.random() * 10).toFixed(1)),
+    lat: Number((centerLat + (Math.random() - 0.5) * 0.04).toFixed(6)),
+    lng: Number((centerLng + (Math.random() - 0.5) * 0.04).toFixed(6)),
+    location,
+    distanceKm: Number((1 + Math.random() * 5).toFixed(2)),
+    timestamp: Date.now(),
+    events: JSON.stringify({ type: "simulated", source: "server" }),
+  };
+}
+
+async function sendTbSimulatorTelemetry() {
+  const telemetry = buildTbSimulatorTelemetry();
+  const url = `${TB_BASE_URL}/api/v1/${TB_DEVICE_ACCESS_TOKEN}/telemetry`;
+
+  try {
+    const response = await axios.post(url, telemetry, {
+      headers: { "Content-Type": "application/json" },
+      timeout: 10_000,
+    });
+    console.log(`🎲 TB simulator sent ${response.status}:`, telemetry);
+  } catch (err) {
+    console.error(
+      "❌ TB simulator send FAILED:",
+      err?.response?.status,
+      err?.response?.data || err?.message || err,
+    );
+  }
+}
+
+function startTbSimulatorKeyboard() {
+  // VS Code/npm บางรูปแบบส่ง stdin มาแบบ pipe แม้ผู้ใช้จะเปิด Terminal อยู่
+  // จึงลองใช้ terminal device โดยตรงก่อนปิดฟีเจอร์ Spacebar
+  let keyboardInput = process.stdin;
+  if (!keyboardInput.isTTY) {
+    try {
+      const ttyFd = fs.openSync("/dev/tty", "r");
+      keyboardInput = new tty.ReadStream(ttyFd);
+    } catch {
+      console.log("⚠️ TB simulator Spacebar disabled: no interactive terminal found");
+      return;
+    }
+  }
+
+  readline.emitKeypressEvents(keyboardInput);
+  keyboardInput.setRawMode(true);
+  keyboardInput.resume();
+  console.log("⌨️ TB simulator Spacebar ready: press Spacebar to send now");
+
+  keyboardInput.on("keypress", (key, info) => {
+    if (info?.ctrl && info.name === "c") {
+      keyboardInput.setRawMode(false);
+      process.exit(0);
+    }
+    if (info?.name === "space") {
+      console.log("⌨️ Spacebar detected; sending simulated telemetry...");
+      sendTbSimulatorTelemetry().catch(() => {});
+    }
+  });
 }
 
 async function runTbTokenRefreshDemo() {
@@ -1095,6 +1188,28 @@ app.get("/tb/latest", requireAuth, async (req, res) => {
   }
 });
 
+// ตรวจอายุ Tenant JWT ของ ThingsBoard โดยไม่เปิดเผย token จริง
+app.get("/tb/token-status", requireAuth, async (_req, res) => {
+  try {
+    await tbLogin();
+    const now = Date.now();
+    const remainingMs = Math.max(0, tbTokenExp - now);
+
+    return res.json({
+      ok: true,
+      issuedAt: tbTokenIssuedAt ? new Date(tbTokenIssuedAt).toISOString() : null,
+      expiresAt: tbTokenExp ? new Date(tbTokenExp).toISOString() : null,
+      remainingMs,
+      remainingMinutes: Math.floor(remainingMs / 60000),
+      refreshIntervalMinutes: Math.floor(TB_TOKEN_REFRESH_MS / 60000),
+      refreshDue: now - tbTokenIssuedAt >= TB_TOKEN_REFRESH_MS,
+    });
+  } catch (e) {
+    console.error("GET /tb/token-status FAILED:", e?.response?.data || e);
+    return res.status(500).json({ ok: false, message: e?.message ?? "Internal error" });
+  }
+});
+
 // ✅ ThingsBoard latest (ALL devices)
 app.get("/tb/latest-all", requireAuth, async (_req, res) => {
   try {
@@ -1524,7 +1639,23 @@ if (TB_LATESTALL_WS_ENABLE) {
   pollTbLatestAllAndBroadcast().catch(() => {});
 }
 
+// ✅ optional: จำลอง hardware อัตโนมัติทุก 5 นาที
+if (TB_SIMULATOR_ENABLE) {
+  if (!TB_BASE_URL || !TB_DEVICE_ACCESS_TOKEN) {
+    console.error("⚠️ TB simulator disabled: TB_BASE_URL/TB_DEVICE_ACCESS_TOKEN is incomplete");
+  } else {
+    console.log(`🎲 TB simulator enabled: every ${Math.round(TB_SIMULATOR_MS / 60000)} minutes`);
+    sendTbSimulatorTelemetry().catch(() => {});
+    setInterval(sendTbSimulatorTelemetry, TB_SIMULATOR_MS);
+
+    if (TB_SIMULATOR_SPACEBAR_ENABLE) {
+      startTbSimulatorKeyboard();
+    }
+  }
+}
+
 server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🟢 Server started: ${new Date().toString()}`);
   console.log(`🚀 HTTP: http://localhost:${PORT}`);
   console.log(`🔌 WS : ws://localhost:${PORT}`);
 

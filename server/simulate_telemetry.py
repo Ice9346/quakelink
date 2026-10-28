@@ -36,15 +36,35 @@ env = load_env()
 base_url = env.get("TB_BASE_URL", "").rstrip("/")
 device_token = env.get("TB_DEVICE_ACCESS_TOKEN", "").strip()
 
+THAI_LOCATIONS = [
+    ("Bangkok", 13.7563, 100.5018),
+    ("Chiang Mai", 18.7883, 98.9853),
+    ("Chiang Rai", 19.9105, 99.8406),
+    ("Phrae", 18.1446, 100.1403),
+    ("Nan", 18.7756, 100.7730),
+    ("Phitsanulok", 16.8211, 100.2659),
+    ("Khon Kaen", 16.4322, 102.8236),
+    ("Udon Thani", 17.4138, 102.7875),
+    ("Nakhon Ratchasima", 14.9799, 102.0978),
+    ("Ubon Ratchathani", 15.2287, 104.8564),
+    ("Ayutthaya", 14.3532, 100.5680),
+    ("Chonburi", 13.3611, 100.9847),
+    ("Hua Hin", 12.5684, 99.9577),
+    ("Surat Thani", 9.1382, 99.3217),
+    ("Phuket", 7.8804, 98.3923),
+    ("Hat Yai", 7.0084, 100.4747),
+]
+
 
 def make_telemetry():
+    location, center_lat, center_lng = random.choice(THAI_LOCATIONS)
     return {
         "pga": round(random.uniform(0.05, 0.50), 2),
         "si": round(random.uniform(0.50, 5.50), 2),
         "temp": round(random.uniform(25.0, 35.0), 1),
-        "lat": round(random.uniform(18.1396, 18.1496), 6),
-        "lng": round(random.uniform(100.1353, 100.1453), 6),
-        "location": "Phrae",
+        "lat": round(center_lat + random.uniform(-0.02, 0.02), 6),
+        "lng": round(center_lng + random.uniform(-0.02, 0.02), 6),
+        "location": location,
         "distanceKm": round(random.uniform(1.0, 6.0), 2),
         "timestamp": int(time.time() * 1000),
         "events": json.dumps({"type": "simulated", "source": "python"}),

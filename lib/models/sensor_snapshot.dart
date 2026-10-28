@@ -10,6 +10,10 @@ class SensorSnapshot {
   final dynamic events;
   final int? updatedAtTs;
   final DateTime? timestamp;
+  final double? lat;
+  final double? lng;
+  final String? location;
+  final double? distanceKm;
 
   const SensorSnapshot({
     required this.deviceName,
@@ -20,6 +24,10 @@ class SensorSnapshot {
     this.events,
     this.updatedAtTs,
     this.timestamp,
+    this.lat,
+    this.lng,
+    this.location,
+    this.distanceKm,
   });
 
   // ---------------- helpers ----------------
@@ -81,6 +89,28 @@ class SensorSnapshot {
 
   static List? _asList(dynamic v) {
     if (v is List) return v;
+    return null;
+  }
+
+  static String? _pickString(Map<String, dynamic> root, List<String> keys) {
+    String? fromMap(Map<String, dynamic> map) {
+      for (final key in keys) {
+        final value = map[key];
+        if (value != null && value.toString().trim().isNotEmpty) {
+          return value.toString();
+        }
+      }
+      return null;
+    }
+
+    final direct = fromMap(root);
+    if (direct != null) return direct;
+
+    for (final nestKey in const ['telemetry', 'latest', 'values', 'data', 'payload']) {
+      final nested = _asMap(root[nestKey]);
+      final value = nested == null ? null : fromMap(nested);
+      if (value != null) return value;
+    }
     return null;
   }
 
@@ -173,6 +203,11 @@ class SensorSnapshot {
 
     final events = json['events'] ?? json['event'] ?? json['dataEvents'];
 
+    final lat = _pickNum(json, const ['lat', 'latitude']);
+    final lng = _pickNum(json, const ['lng', 'lon', 'longitude']);
+    final distanceKm = _pickNum(json, const ['distanceKm', 'distance_km']);
+    final location = _pickString(json, const ['location', 'place', 'area']);
+
     final updatedAtTs = _toInt(json['updatedAtTs'] ?? json['updated_at_ts'] ?? json['ts'] ?? json['updatedAt']);
     final timestamp = _toDateTime(json['timestamp'] ?? json['time'] ?? json['updated_at']);
 
@@ -185,6 +220,10 @@ class SensorSnapshot {
       events: events,
       updatedAtTs: updatedAtTs,
       timestamp: timestamp,
+      lat: lat,
+      lng: lng,
+      location: location,
+      distanceKm: distanceKm,
     );
   }
 }

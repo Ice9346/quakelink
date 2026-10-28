@@ -47,6 +47,7 @@ app.*.map.json
 # Local secrets and machine-specific files
 .env
 **/.env
+web/google_maps_config.js
 ios/Runner/GoogleService-Info.plist
 android/local.properties
 

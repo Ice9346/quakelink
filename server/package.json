@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "bash scripts/dev.sh",
     "simulate": "node simulate_telemetry.js",
     "simulate:py": "python3 simulate_telemetry.py",
     "check": "node --check server.js",

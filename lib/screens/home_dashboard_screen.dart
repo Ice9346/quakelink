@@ -211,6 +211,40 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     return list.first;
   }
 
+  AlertEvent _snapshotToAlertEvent(SensorSnapshot s) {
+    final fixed = _sensorFixedLatLng[s.deviceName.trim()];
+    final lat = (s.lat != null && s.lat != 0) ? s.lat! : (fixed?.latitude ?? 0);
+    final lng = (s.lng != null && s.lng != 0) ? s.lng! : (fixed?.longitude ?? 0);
+    final timestamp = s.timestamp ??
+        (s.updatedAtTs != null
+            ? DateTime.fromMillisecondsSinceEpoch(s.updatedAtTs!)
+            : DateTime.now());
+    final stableTs = s.updatedAtTs ?? timestamp.millisecondsSinceEpoch;
+    final name = s.deviceName.trim();
+    final pga = s.pga ?? 0;
+    final si = s.si ?? 0;
+
+    return AlertEvent(
+      alertId: 'TB-$name-$stableTs',
+      severity: _deriveSeverityFromPgaSi(pga, si),
+      magnitude: pga,
+      location: (s.location?.trim().isNotEmpty == true) ? s.location!.trim() : name,
+      description:
+          'Sensor $name update: pga=${pga.toStringAsFixed(2)}, si=${si.toStringAsFixed(2)}, temp=${(s.temp ?? 0).toStringAsFixed(1)}°C',
+      timestamp: timestamp,
+      distanceKm: s.distanceKm ?? 0,
+      lat: lat,
+      lng: lng,
+      nodeId: name,
+    );
+  }
+
+  SeverityLevel _deriveSeverityFromPgaSi(double pga, double si) {
+    if (pga >= 1.5 || si >= 80) return SeverityLevel.severe;
+    if (pga >= 0.8 || si >= 40) return SeverityLevel.moderate;
+    return SeverityLevel.caution;
+  }
+
   // ✅ อัปเดต cache: เก็บ "ค่าล่าสุดที่ไม่ใช่ 0" ต่อ node
   // - ถ้าค่าปัจจุบันเป็น 0,0 => ห้ามทับ
   // - อัปเดตเฉพาะตอนมี si/pga non-zero อย่างน้อย 1 ค่า
@@ -315,13 +349,22 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ? _dbAlerts.first
         : (merged.isNotEmpty ? merged.first : null);
 
-    final recentForMap = merged.length <= 8 ? merged : merged.take(8).toList();
+    final latestSensorEvents = store.tbLatestAll
+        .map(_snapshotToAlertEvent)
+        .where((e) => e.lat != 0 && e.lng != 0)
+        .toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final recentForMap = [...latestSensorEvents, ...merged]
+        .take(8)
+        .toList();
 
     final mapHeight = MediaQuery.of(context).size.height * 0.40;
 
     final nearestSnap = _pickNearestSnapshot(store);
     final anySnap = _pickAnyLatestSnapshot(store);
     final snap = nearestSnap ?? anySnap;
+    final latestSensorEvent = snap == null ? null : _snapshotToAlertEvent(snap);
+    final viewDetailEvent = latestSensorEvent ?? latestAlert;
 
     final tbDeviceName = snap?.deviceName;
     final tbId = (snap?.deviceId ?? snap?.deviceName);
@@ -616,7 +659,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                               context.read<WsAlertStore>(),
                             );
                           },
-                          latestAlert: latestAlert,
+                          latestAlert: viewDetailEvent,
                           onViewDetails: (e) {
                             Navigator.of(context).push(
                               MaterialPageRoute(
